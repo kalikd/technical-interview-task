@@ -1,6 +1,7 @@
 import express, { Application, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { Mp3Controller } from './controllers/Mp3Controller';
+import * as fs from 'fs';
 
 export class App {
     private app: Application;
@@ -16,9 +17,17 @@ export class App {
     private configureMiddlewares(): void {
         this.app.use(express.json());
         this.app.use(express.urlencoded({ extended: true }));
+
+        const uploadsDir = 'uploads/';
+
+        // Ensure the uploads directory exists
+        if (!fs.existsSync(uploadsDir)) {
+            fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+
         const storage = multer.diskStorage({
             destination: function (req, file, cb) {
-                cb(null, 'uploads/');
+                cb(null, uploadsDir);
             },
             filename: function (req, file, cb) {
                 cb(null, file.originalname);
