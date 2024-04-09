@@ -6,28 +6,40 @@ export default class Mp3Service {
 
     public countFrames(filePath: string): Promise<number> {
         return new Promise((resolve, reject) => {
-            fs.readFile(filePath, (err, data) => {
-                if (err) reject(err);
-
-                let frameCount = 0;
+            const stream = fs.createReadStream(filePath, { highWaterMark: 1024 * 1024 });
+            let frameCount = 0;
+            let leftover = Buffer.alloc(0);
+    
+            stream.on('data', (chunk: Buffer) => {
+                let data = Buffer.concat([leftover, chunk]);
                 let index = 0;
-
-                while (index < data.length) {
+    
+                while (index + 4 <= data.length) { 
                     if (data[index] === 0xFF && (data[index + 1] & 0xE0) === 0xE0) {
+                       
                         const version = (data[index + 1] & 0x18) >> 3;
                         const layer = (data[index + 1] & 0x06) >> 1;
-
+    
                         if (version === 3 && layer === 1) {
+                            if (index + 4 > data.length) {
+                                break;
+                            }
+    
                             const header = data.slice(index, index + 4);
                             const { bitrate, samplingRate, padding } = this.parseFrameHeader(header);
-
+    
                             if (bitrate === 0 || samplingRate === 0) {
                                 reject(new Error('Invalid bitrate or sampling rate.'));
                                 return;
                             }
-
+    
                             const frameLength = Math.floor((144 * bitrate) / samplingRate) + padding;
-                            index += frameLength;
+    
+                            if (index + frameLength > data.length) {
+                                break;
+                            }
+    
+                            index += frameLength; 
                             frameCount++;
                         } else {
                             index++;
@@ -36,8 +48,16 @@ export default class Mp3Service {
                         index++;
                     }
                 }
-
+    
+                leftover = data.slice(index);
+            });
+    
+            stream.on('end', () => {
                 resolve(frameCount);
+            });
+    
+            stream.on('error', (err) => {
+                reject(err);
             });
         });
     }
@@ -53,7 +73,3 @@ export default class Mp3Service {
         return { bitrate, samplingRate, padding };
     }
 }
-
-// <<<<<< What further improvements can be done? >>>>>>
-// 1. Avoid loading of entire file: Instead of loading a complete file we can stream the file using fs.createReadStream to read in chunks, this will reduce memory usage and will not take that much time as loading entire file takes time.
-// 2. Avoid byte-by-byte processing: After finding a frame, calculate its length and jump to the next frame position instead of inspecting every single byte.
